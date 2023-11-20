@@ -1,0 +1,445 @@
+'''
+Note 1 :remove all security related data like password before uploading
+Note 2 :install all package related to code
+Note 3 :ChatGPT API , dont make api public , additional comment on function check it
+
+'''
+
+import os
+import pywhatkit
+import smtplib
+from email.mime.text import MIMEText
+from twilio.rest import Client
+import openai
+import geocoder
+from geopy.geocoders import Nominatim
+import tweepy
+import pyttsx3
+import pygame
+import sys
+import time
+import requests
+from bs4 import BeautifulSoup
+
+# Add your Twitter API credentials
+consumer_key = 'your_consumer_key'
+consumer_secret = 'your_consumer_secret'
+access_token = 'your_access_token'
+access_token_secret = 'your_access_token_secret'
+
+# Authenticate with Twitter API
+auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+auth.set_access_token(access_token, access_token_secret)
+api = tweepy.API(auth)
+
+#Authenticate with Chat GPT
+# api key
+'''
+open new tab > openai > login > select api option > in menu > find api > create new api 
+> add at leat 2 sometime it does not work > while adding > you can copy from there 
+> NOTE : dont make api public
+'''
+openai.api_key = "*************************************"
+
+def get_text_from_html(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    return soup.get_text()
+
+def get_data_from_medium(url):
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        # Extracting the text content
+        content = get_text_from_html(response.text)
+        return content
+    else:
+        return None
+
+def get_data_from_wikipedia(url):
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        # Extracting the main content from Wikipedia
+        soup = BeautifulSoup(response.text, 'html.parser')
+        content_div = soup.find('div', {'id': 'content'})
+        
+        if content_div:
+            paragraphs = content_div.find_all('p')
+            
+            # Extracting text from paragraphs
+            content = '\n'.join([paragraph.text for paragraph in paragraphs])
+            return content
+        else:
+            return "No content found on Wikipedia page."
+    else:
+        return None
+
+def speak_text(text_to_speak):
+    engine = pyttsx3.init()
+    engine.say(text_to_speak)
+    engine.runAndWait()
+
+
+def play_video_with_audio(video_file_path):
+    pygame.init()
+    clock = pygame.time.Clock()
+
+    screen = pygame.display.set_mode((800, 600))
+    pygame.display.set_caption('Basic Video Player')
+
+    video = pygame.image.load(video_file_path)
+    audio = pygame.mixer.Sound(audio_file_path)
+
+    audio.play()
+
+    playing = True
+    while playing:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                playing = False
+
+        screen.blit(video, (0, 0))
+        pygame.display.flip()
+        clock.tick(60)
+
+    pygame.quit()
+    sys.exit()
+
+
+def play_audio(file_path):
+    pygame.init()
+    pygame.mixer.init()
+
+    if os.path.exists(file_path):
+        pygame.mixer.music.load(file_path)
+        pygame.mixer.music.play()
+        time.sleep(5)  # Adjust the sleep duration as needed
+        pygame.mixer.music.stop()
+    else:
+        print(f"Error: The specified file '{file_path}' does not exist.")
+
+def get_current_trends(api, location_id=1):
+    """
+    Get the current trending topics on Twitter for a specific location.
+
+    Parameters:
+    - api: Tweepy API object
+    - location_id: The WOEID (Where On Earth ID) for the location. Default is 1 (Worldwide).
+
+    Returns:
+    - List of current trending topics.
+    """
+    try:
+        # Get current trending topics
+        trends = api.trends_place(id=location_id)
+        return [trend['name'] for trend in trends[0]['trends']]
+    except tweepy.TweepError as e:
+        print(f"Error: {e}")
+        return []
+
+def get_top_hashtag_posts(api, hashtag='#python', count=10):
+    """
+    Get the top posts on Twitter for a specific hashtag.
+
+    Parameters:
+    - api: Tweepy API object
+    - hashtag: The hashtag to search for. Default is '#python'.
+    - count: The number of posts to retrieve. Default is 10.
+
+    Returns:
+    - List of top tweets for the given hashtag.
+    """
+    try:
+        # Get top posts for the hashtag
+        tweets = tweepy.Cursor(api.search, q=hashtag, count=count, lang='en').items()
+        return [tweet.text for tweet in tweets]
+    except tweepy.TweepError as e:
+        print(f"Error: {e}")
+        return []
+
+def get_current_location():
+    choice = int(input("Press 1 to get your location details: "))
+    if choice == 1:
+        location = geocoder.ip('me')
+        if location:
+            return location
+        else:
+            print("Unable to retrieve location.")
+            return None
+    else:
+        return None
+
+def chat_with_gpt(user_input, chat_history=[]):
+    messages = [{"role": "system", "content": "You are a helpful assistant."}]
+    messages.extend([{"role": "user", "content": message} for message in chat_history])
+    messages.append({"role": "user", "content": user_input})
+
+    try:
+        
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=user_input,
+            messages=messages
+        )
+
+        
+        assistant_response = response['choices'][0]['message']['content']
+
+        return assistant_response
+
+    except Exception as e:
+        # Handle API call errors
+        print(f"Error interacting with ChatGPT: {e}")
+        return None
+    
+def chatgpt():
+    user_input = input("Type your message for ChatGPT: ")
+    response = chat_with_gpt(user_input)
+    print("ChatGPT:", response)
+
+def send_email(sender_email, receiver_email, password, subject, body):
+    message = MIMEText(body)
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = subject
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(sender_email, password)
+        server.sendmail(sender_email, receiver_email, message.as_string())
+
+def send_sms(account_sid, auth_token, sender_number, receiver_number, message_body):
+    client = Client(account_sid, auth_token)
+    message = client.messages.create(
+        body=message_body,
+        from_=sender_number,
+        to=receiver_number
+    )
+
+def whatapp():
+    receiver_number = input("Receiver number (add +91): ")
+    print("")
+    message = input("Type message to be sent: ")
+    print("")
+    hour = int(input("Hour: "))
+    print("")
+    minute = int(input("Minute: "))
+    print("")
+    pywhatkit.sendwhatmsg(receiver_number, message, hour, minute)
+    print("")
+    print("completed")
+
+def sum_operation():
+    x = int(input("enter first number : "))
+    y = int(input("enter second number : "))
+    result = x + y
+    print("Sum:", result)
+
+def multiplaction_operation():
+    x = int(input("enter first number : "))
+    y = int(input("enter second number : "))
+    result = x * y
+    print("Multiplication:", result)
+
+def subtraction_operation():
+    x = int(input("enter first number : "))
+    y = int(input("enter second number : "))
+    result = x - y
+    print("Subtraction:", result)
+    
+def division_operation():
+    x = int(input("enter first number : "))
+    y = int(input("enter second number : "))
+    result = x / y
+    print("division:", result)
+    
+def square():
+    x = int(input("enter number : "))
+    result = x * x
+    print("Square :", result)
+    
+def cube():
+    x = int(input("enter number : "))
+    result = x * x * x
+    print("Cube :", result)
+    
+def square_root():
+    x = float(input("Enter a number: "))
+    result = x ** 0.5
+    print("Square Root:", result)
+    
+def even_odd_number():
+    x = int(input("enter number : "))
+    if x % 2 == 0:
+        print("even number ")
+    else:
+        print("odd number")
+        
+        
+    
+while True:
+    print("""
+    press 1 : Notepad
+    press 2 : chrome
+    press 3 : whatapp
+    press 4 : Email
+    press 5 : SMS
+    press 6 : chatGPT
+    press 7 : Geolocation,cuttent location 
+    press 8 : Current trends on twitter / X
+    press 9 : top 10 posts on wiki , on given topic
+    press 10 : Summary on a topic
+    press 11 : music player
+    press 12 : video player
+    press 13 : Text to speak
+    press 14 : sum two number
+    press 15 : multiple two number
+    press 16 : subtraction two number
+    press 17 : division two number
+    press 18 : square
+    press 19 : cude
+    press 20 : square root
+    press 21 : even and odd number
+    press 99: Exit
+    """)
+    
+    choice = int(input("Enter your choice: "))
+    
+    if choice == 1:
+        print("opening notepad ...... ")
+        os.system("Notepad")
+        
+    elif choice == 2:
+        print("opening chrome ....... ")
+        os.system("start chrome")
+        
+    elif choice == 3:
+        print("opening whatapp ....... ")
+        whatapp()
+        
+    elif choice == 4:
+        print("opening email ........ ")
+        sender_email = "********@gmail.com" # enter you email
+        receiver_email = input("Enter email address:")
+        password = "*************"   # same as key you have to search for key to acess email from python
+        subject = input("Subject:")
+        body = input("Content for mail:")
+        send_email(sender_email, receiver_email, password, subject, body)
+        
+    elif choice == 5:
+        print("opening message ......... ")
+        account_sid = "******************************"  # Replace with your Twilio Account SID
+        auth_token = "********************************"  # Replace with your Twilio Auth Token
+        sender_number = "************"  # Your Twilio Phone Number
+        receiver_number = input("Enter receiver's phone number (add +91): ")
+        message_body = input("Enter text message for receiver: ")
+        send_sms(account_sid, auth_token, sender_number, receiver_number, message_body)
+        
+    elif choice == 6:
+        print("opening chatgpt ......... ")
+        chatgpt()
+        
+    elif choice == 7:
+        print("opening gps .......... ")
+        current_location = get_current_location()
+        if current_location:
+            address = current_location.address
+            latitude = current_location.latlng[0]
+            longitude = current_location.latlng[1]
+            print(f"Your address is: {address}")
+            print(f"Your latitude and longitude are: {latitude}, {longitude}")
+        else:
+            print("Location details not available.")
+            
+    elif choice == 8:
+        print("opening twitter .......... ")
+        trends = get_current_trends(api)
+        print("Current Trends on Twitter:")
+        print(trends)
+        
+    elif choice == 9:
+        print("opening twitter # ......... ")
+        hashtag = input("Enter the hashtag (default is #python): ")
+        if not hashtag:
+            hashtag = '#python'
+        posts = get_top_hashtag_posts(api, hashtag)
+        print(f"Top 10 posts for {hashtag} on Twitter:")
+        print(posts)
+        
+    elif choice == 10:
+        print("summary ......... ")
+        # Ask the user for a topic to search
+        topic_to_search = input("Enter a topic to search on Medium and Wikipedia: ")
+        
+        # Get data from Medium
+        medium_url = f'https://medium.com/search?q={topic_to_search.replace(" ", "+")}'
+        medium_data = get_data_from_medium(medium_url)
+        
+        if medium_data:
+            print("Data from Medium:")
+            print(medium_data)
+        else:
+            print("No data available from Medium.")
+        
+        # Get data from Wikipedia
+        wikipedia_url = f'https://en.wikipedia.org/wiki/{topic_to_search.replace(" ", "+")}'
+        wikipedia_data = get_data_from_wikipedia(wikipedia_url)
+        
+        if wikipedia_data:
+            print("\nData from Wikipedia:")
+            print(wikipedia_data)
+        else:
+            print("No data available from Wikipedia.")
+            
+    elif choice == 11:
+        print("audio ......... ")
+        audio_file_path = input("Enter the audio file path: ")
+        play_audio(audio_file_path)
+        
+    elif choice == 12:
+        print("video .......... ")
+        video_file_path = input("Enter the video file path: ")
+        play_video_with_audio(video_file_path)
+        
+    elif choice == 13:
+        print("text to speech  ............ ")
+        text_to_speak = input("Enter the text to speak: ")
+        speak_text(text_to_speak)
+        
+    elif choice == 14:
+        print("sum operation ......... ")
+        sum_operation()
+        
+    elif choice == 15:
+        print("multiple .......... ")
+        multiplaction_operation()
+        
+    elif choice == 16:
+        print("subtraction .......... ")
+        subtraction_operation()
+        
+    elif choice == 17:
+        print("division .......... ")
+        division_operation()
+        
+    elif choice == 18:
+        print("square .......... ")
+        square()
+        
+    elif choice == 19:
+        print("cube .......... ")
+        cube()
+        
+    elif choice == 20:
+        print("sq root .......... ")
+        square_root()
+        
+    elif choice == 21:
+        print("even and odd number .......... ")
+        even_odd_number()
+    
+    elif choice == 99:
+        print("Exiting...")
+        break
+    else:
+        print("Invalid choice. Please try again.")
